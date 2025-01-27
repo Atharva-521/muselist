@@ -11,7 +11,7 @@ const Creator = ({
     }
 }) => {
     return <div className="w-full h-full">
-        <StreamView creatorId={creatorId} playVideo={false} />
+        <StreamView creatorId={creatorId} playVideo={true} />
     </div>
 
 }

@@ -1,14 +1,19 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { ArrowUpCircle, Play, Plus } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle, Play, Plus, Send } from 'lucide-react'
 import { YT_REGEX } from "../lib/utls"
 import LiteYouTubeEmbed from 'react-lite-youtube-embed';
 import 'react-lite-youtube-embed/dist/LiteYouTubeEmbed.css'
+//@ts-ignore
+import YoutubePlayer from 'youtube-player';
+import {toast, ToastContainer} from 'react-toastify';
+import { Appbar } from "./Appbar"
+
 
 interface Video {
     "id": string,
@@ -21,26 +26,27 @@ interface Video {
     "active": boolean,
     "userId": string,
     "upvotes": number,
-    "haveUpvoted": boolean
+    "haveUpvoted": boolean,
+    "upvoteCount": number
 }
 
 const REFRESH_INTERVAL_MS = 10 * 1000;
 
-const refresh = () => {
 
-}
 
-export default function StreamView({ creatorId, playVideo = false }: { creatorId: string, playVideo: boolean }) {
+export default function StreamView({ creatorId = '', playVideo = true }: { creatorId: string, playVideo: boolean }) {
     const [queue, setQueue] = useState<Video[]>([])
     const [nowPlaying, setNowPlaying] = useState<Video | null>(null)
     const [newVideoTitle, setNewVideoTitle] = useState("")
     const [previewVideo, setPreviewVideo] = useState<Video | null>(null)
     const [inputLink, setInputLink] = useState('');
+    const [loading, setLoading] = useState(false);
+    const videoPlayerRef = useRef<HTMLDivElement>(null);
 
 
     const refreshStreams = async () => {
         try {
-            const res = await fetch(`/api/streams/?creatorId=${creatorId}`,
+            const res = await fetch(`/api/streams/${playVideo ? `?creatorId=${creatorId}` : 'my'}`,
                 {
                     credentials: "include"
                 }
@@ -54,7 +60,7 @@ export default function StreamView({ creatorId, playVideo = false }: { creatorId
                 if (video?.id === json.activeStream?.stream?.id) {
                     return video;
                 }
-                return json.activeStream?.stream?.id
+                return json.activeStream?.stream
             })
         } catch (e) {
             console.log("error : ", e);
@@ -68,21 +74,10 @@ export default function StreamView({ creatorId, playVideo = false }: { creatorId
         }, REFRESH_INTERVAL_MS)
     }, []);
 
-    useEffect(() => {
-        if (newVideoTitle.trim()) {
-            setPreviewVideo({
-                id: "preview",
-                title: newVideoTitle.trim(),
-                votes: 0,
-                thumbnail: `/placeholder.svg?height=90&width=120&text=${encodeURIComponent(newVideoTitle.trim())}`,
-            })
-        } else {
-            setPreviewVideo(null)
-        }
-    }, [newVideoTitle])
 
     const addToQueue = async (e: React.FormEvent) => {
         e.preventDefault()
+        setLoading(true);
         const res = await fetch('/api/streams', {
             method: "POST",
             body: JSON.stringify({
@@ -93,37 +88,120 @@ export default function StreamView({ creatorId, playVideo = false }: { creatorId
         console.log('res', res);
         const data = await res.json();
         setQueue((prevQueue: any) => [...prevQueue, data])
+        setLoading(false);
         setNewVideoTitle("")
+        setInputLink("");
     }
 
+    useEffect(() => {
+        if(!videoPlayerRef.current){
+            return;
+        }
 
-    const upvote = (id: string) => {
-        setQueue((prevQueue) =>
-            prevQueue.map((video) =>
-                video.id === id ? { ...video, votes: video.votes + 1 } : video
-            )
-        )
+        let player = YoutubePlayer('ytplayer');
+        console.log('player : ',player);
+
+        player.loadVideoById(nowPlaying?.extractedId);
+
+        player.playVideo();
+
+        function eventHandler(event: any){
+            console.log("state : ", event);
+            if(event.data === 0){
+                console.log("Inside");
+                playNext();
+            }
+        };
+
+        player.on('stateChange', eventHandler);
+
+        return () => {
+            player.destroy();
+        }
+
+    },[nowPlaying, videoPlayerRef])
+
+
+    const handleVote = async (id: string, isUpvote: boolean) => {
+        setQueue(prev => prev.map(video => (
+            video?.id == id ? {
+                ...video,
+                upvoteCount: isUpvote ? video.upvoteCount + 1 : video.upvoteCount - 1,
+                haveUpvoted: !video.haveUpvoted
+            } : video
+        )).sort((a, b) => (b.upvoteCount) - (a.upvoteCount)));
+
+        fetch(`/api/streams/${isUpvote ? "upvote" : "downvote"}`, {
+            method: "POST",
+            body: JSON.stringify({
+                streamId: id
+            })
+        })
+
+
+
+
     }
 
-    const playNext = () => {
-        if (queue.length > 0) {
-            const nextVideo = queue.reduce((prev, current) =>
-                prev.votes > current.votes ? prev : current
-            )
-            setNowPlaying(nextVideo)
-            setQueue((prevQueue) => prevQueue.filter((video) => video.id !== nextVideo.id))
+    const playNext = async () => {
+        if (queue.length >= 0) {
+            try {
+                const data = await fetch('/api/streams/next', {
+                    method: "GET",
+                })
+
+                const json = await data.json();
+                setNowPlaying(json.stream);
+                setQueue(prev => prev.filter(elem => elem.id !== json.stream?.id));
+
+            } catch (e) {
+
+            }
         }
     }
 
     console.log("queue", queue);
 
+    const handleShare = () => {
+        const shareableLink = `${window.location.hostname}/creator/${creatorId}`
+        navigator.clipboard.writeText(shareableLink).then(() => {
+          toast.success('Link copied to clipboard!', {
+            position: "top-right",
+            autoClose: 3000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+            progress: undefined,
+          })
+        }, (err) => {
+          console.error('Could not copy text: ', err)
+          toast.error('Failed to copy link. Please try again.', {
+            position: "top-right",
+            autoClose: 3000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+            progress: undefined,
+          })
+        })
+      }
+    
+
     return (
         <div className="p-4 w-[100%] bg-gradient-to-b from-purple-100 to-blue-100 min-h-screen">
-            <h1 className="text-3xl font-bold mb-6 text-center text-purple-800">Music Streaming Platform</h1>
+            <Appbar />
             <div className="grid grid-cols-2 w-[80%] mx-auto gap-10">
                 {/* Queue */}
-                <div className="bg-white rounded-lg p-4 shadow-md">
-                    <h2 className="text-xl font-semibold mb-4 text-purple-800">Queue</h2>
+                <div className="bg-white rounded-lg p-4 shadow-md  ">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-xl font-semibold mb-4 text-purple-800">Queue</h2>
+                       { playVideo ? <Button onClick={handleShare} className="bg-purple-600 hover:bg-purple-700 flex items-center">
+                                <Send />
+                                Share
+                        </Button> : ''}
+                    </div>
                     {queue?.length === 0 ? (
                         <p className="text-gray-500">Queue is empty</p>
                     ) : (
@@ -141,13 +219,18 @@ export default function StreamView({ creatorId, playVideo = false }: { creatorId
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                onClick={() => upvote(video.id)}
+                                                onClick={() => handleVote(video.id, video.upvoteCount ? false : true)}
                                                 className="text-blue-600 hover:text-blue-800"
                                             >
-                                                <ArrowUpCircle className="h-5 w-5 mr-1" />
-                                                Upvote
+                                                {
+                                                    !video.haveUpvoted ? (<span className="flex">
+                                                        <ArrowUpCircle className="h-5 w-5 mr-1" />
+                                                        Upvote
+                                                    </span>) : (<span className="flex"><ArrowDownCircle className="h-5 w-5 mr-1" /> downvote</span>)
+                                                }
+
                                             </Button>
-                                            <span className="ml-2 text-sm text-gray-600">{video.votes} votes</span>
+                                            <span className="ml-2 text-sm text-gray-600">{video.upvoteCount} votes</span>
                                         </div>
                                     </div>
                                 </li>
@@ -167,9 +250,10 @@ export default function StreamView({ creatorId, playVideo = false }: { creatorId
                                 placeholder="Enter video title"
                                 className="flex-grow bg-white"
                             />
-                            <Button type="submit" className="bg-purple-600 hover:bg-purple-700">
-                                <Plus className="h-4 w-4 mr-2" />
-                                Add to Queue
+                            <Button type="submit" disabled={loading} className="bg-purple-600 hover:bg-purple-700">
+                                {loading ? "...Adding to Queue" : <div className="flex items-center"><Plus className="h-4 w-4 mr-2" />
+                                    Add to Queue</div>}
+
                             </Button>
                         </div>
                         {inputLink && inputLink.match(YT_REGEX) && (
@@ -187,21 +271,10 @@ export default function StreamView({ creatorId, playVideo = false }: { creatorId
                         <CardContent className="p-4">
                             <h2 className="text-xl font-semibold mb-2">Now Playing</h2>
                             {nowPlaying ? (
-                                <div className="flex items-center gap-4">
-                                    <Image
-                                        src={nowPlaying.thumbnail || "/placeholder.svg"}
-                                        alt={nowPlaying.title}
-                                        width={120}
-                                        height={90}
-                                        className="rounded-md"
-                                    />
-                                    <div className="flex-grow">
-                                        <div className="flex items-center gap-2">
-                                            <Play className="h-6 w-6" />
-                                            <span className="text-lg font-medium">{nowPlaying.title}</span>
-                                        </div>
-                                    </div>
-                                </div>
+                                <>
+                                    <div id="ytplayer" ref={videoPlayerRef} className="w-full" />
+                                    
+                                </> 
                             ) : (
                                 <p>No video playing</p>
                             )}
@@ -209,13 +282,13 @@ export default function StreamView({ creatorId, playVideo = false }: { creatorId
                     </Card>
 
                     {
-                        <Button
+                        playVideo ? <Button
                             onClick={playNext}
                             className="mt-6 w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600"
                             disabled={queue.length === 0}
                         >
                             Play Next
-                        </Button>
+                        </Button> : ''
                     }
 
                 </div>
@@ -223,7 +296,18 @@ export default function StreamView({ creatorId, playVideo = false }: { creatorId
 
             </div>
 
-            {/* Play Next Button */}
+            <ToastContainer 
+            position="top-right"
+            autoClose={3000}
+            hideProgressBar={false}
+            newestOnTop={false}
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+            theme="dark"
+        />
 
         </div>
     )
