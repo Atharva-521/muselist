@@ -13,6 +13,7 @@ import 'react-lite-youtube-embed/dist/LiteYouTubeEmbed.css'
 import YoutubePlayer from 'youtube-player';
 import {toast, ToastContainer} from 'react-toastify';
 import { Appbar } from "./Appbar"
+import connectToWebSocket from "../lib/ws";
 
 
 interface Video {
@@ -34,7 +35,7 @@ const REFRESH_INTERVAL_MS = 10 * 1000;
 
 
 
-export default function StreamView({ creatorId = '', playVideo = true }: { creatorId: string, playVideo: boolean }) {
+export default  function StreamView({ creatorId = '', playVideo = true }: { creatorId: string, playVideo: boolean }) {
     const [queue, setQueue] = useState<Video[]>([])
     const [nowPlaying, setNowPlaying] = useState<Video | null>(null)
     const [newVideoTitle, setNewVideoTitle] = useState("")
@@ -42,55 +43,63 @@ export default function StreamView({ creatorId = '', playVideo = true }: { creat
     const [inputLink, setInputLink] = useState('');
     const [loading, setLoading] = useState(false);
     const videoPlayerRef = useRef<HTMLDivElement>(null);
-
-
-    const refreshStreams = async () => {
-        try {
-            const res = await fetch(`/api/streams/${playVideo ? `?creatorId=${creatorId}` : 'my'}`,
-                {
-                    credentials: "include"
-                }
-            );
-
-            const json = await res.json();
-
-            setQueue(json.streams.sort((a: any, b: any) => a.upvotes < b.upvotes ? 1 : -1));
-
-            setNowPlaying(video => {
-                if (video?.id === json.activeStream?.stream?.id) {
-                    return video;
-                }
-                return json.activeStream?.stream
-            })
-        } catch (e) {
-            console.log("error : ", e);
-        }
-    }
+    const [socket, setSocket] = useState<any>(null);
+    const [cookies, setCookies] = useState<any>(null);
 
     useEffect(() => {
-        refreshStreams();
-        const interval = setInterval(() => {
-            refreshStreams()
-        }, REFRESH_INTERVAL_MS)
+        const initializeSocket = async () => {
+            const {socket, cookies} : any = await connectToWebSocket();
+            console.log('cookies : ', cookies);
+            setSocket(socket);
+            setCookies(cookies);
+        };
+
+        initializeSocket();
     }, []);
 
+    useEffect(() => {
+        if (!socket) return;
+
+        const refreshStreams = async () => {
+            try {
+                socket.emit('getstreams', { creatorId, playVideo, cookies });
+                socket.on('streamsData', function (data: any) {
+                    console.log("data : ", data);
+                    setQueue(data.streams.sort((a: any, b: any) => a.upvotes < b.upvotes ? 1 : -1));
+                    setNowPlaying(video => {
+                        if(video?.id ===data.activeStream?.stream?.id ){
+                            return video;
+                        }
+                        return data.activeStream?.stream
+                    })
+                });
+            } catch (e) {
+                console.log("error : ", e);
+            }
+        };
+
+        refreshStreams();
+        const interval = setInterval(() => {
+            refreshStreams();
+        }, REFRESH_INTERVAL_MS);
+
+        return () => clearInterval(interval);
+    }, [socket]);
 
     const addToQueue = async (e: React.FormEvent) => {
         e.preventDefault()
         setLoading(true);
-        const res = await fetch('/api/streams', {
-            method: "POST",
-            body: JSON.stringify({
-                creatorId,
-                url: inputLink
-            })
-        });
-        console.log('res', res);
-        const data = await res.json();
-        setQueue((prevQueue: any) => [...prevQueue, data])
+        socket.emit('createstreams', {creatorId, inputLink});
+        socket.on('streamCreated', function(data: any){
+            setQueue((prevQueue: any) => [...prevQueue, data])
+        })
         setLoading(false);
         setNewVideoTitle("")
         setInputLink("");
+        
+        // console.log('res', res);
+        // setQueue((prevQueue: any) => [...prevQueue, data])
+        
     }
 
     useEffect(() => {
@@ -131,24 +140,14 @@ export default function StreamView({ creatorId = '', playVideo = true }: { creat
             } : video
         )).sort((a, b) => (b.upvoteCount) - (a.upvoteCount)));
 
-        fetch(`/api/streams/${isUpvote ? "upvote" : "downvote"}`, {
-            method: "POST",
-            body: JSON.stringify({
-                streamId: id
-            })
-        })
-
-
-
+        socket.emit("handlevote", {id, isUpvote});
 
     }
 
     const playNext = async () => {
         if (queue.length >= 0) {
             try {
-                const data = await fetch('/api/streams/next', {
-                    method: "GET",
-                })
+                const data: any = socket.emit("playnext");
 
                 const json = await data.json();
                 setNowPlaying(json.stream);
@@ -206,8 +205,8 @@ export default function StreamView({ creatorId = '', playVideo = true }: { creat
                         <p className="text-gray-500">Queue is empty</p>
                     ) : (
                         <ul className="space-y-4">
-                            {queue?.map((video) => (
-                                <li key={video.id} className="flex items-center gap-4 bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded-md">
+                            {queue?.map((video, index) => (
+                                <li key={video.id + index} className="flex items-center gap-4 bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded-md">
                                     <img
                                         src={video.smallImg}
                                         alt={`Thumbnail for ${video.title}`}

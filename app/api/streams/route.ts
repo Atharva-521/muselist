@@ -4,8 +4,7 @@ import {prismaClient} from '@/app/lib/db';
 //@ts-ignore 
 import youtubesearchapi from 'youtube-search-api'
 import { YT_REGEX } from "@/app/lib/utls";
-import { getServerSession } from "next-auth/next";
-;
+import { getServerSession } from "next-auth/next";;
 import { authOptions } from "../auth/[...nextauth]/authOptions";
 
 
@@ -16,6 +15,8 @@ const CreateStreamSchema = z.object({
 })
 
 export async function POST(req: NextRequest){
+    const session = await getServerSession(authOptions);
+    console.log("post session : ", session);
 
     try{
         const data = CreateStreamSchema.parse(await req.json());
@@ -80,7 +81,8 @@ export async function GET(req: NextRequest){
 
     if(!user){
         return NextResponse.json({
-            message: "Unauthenticated"
+            message: "Unauthenticated",
+            session: session
         },{
             status: 403
         })
