@@ -3,7 +3,7 @@ import StreamView from "@/app/components/StreamView"
 
 const Creator = () => {
     return <div className="w-full h-full">
-        <StreamView creatorId=""  playVideo={false}/>
+        <StreamView creatorId="" dashboard={true}  playVideo={false}/>
     </div>
 
 }
