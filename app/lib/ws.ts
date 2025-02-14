@@ -1,44 +1,29 @@
+"use client"
 import { io } from "socket.io-client";
-import { getSession } from "next-auth/react";
 
-async function connectSocket() {
-    const session : any = await getSession();
-    console.log("Session token is : ", session);
-    if (!session?.accessToken) {
-      console.error("No JWT found in session!");
-      return;
-    }
-  
-    const socket = io("http://localhost:8080", {
-      auth: { token: session.accessToken },
-      withCredentials: true // Send the correct JWT
-    });
-  
-    socket.on("connect", () => {
-      console.log("Connected to WebSocket server");
-    });
-  
-    socket.on("disconnect", () => {
-      console.log("Disconnected");
-    });
-
-    async function sendRequest() {
-        // Fetch cookies from the browser
-        const response = await fetch("/api/getCookies");
-        const { cookies } = await response.json();
-    
-        console.log("Cookies before sending to WebSocket:", cookies);
-
-        return cookies;
-    
-    }
-
-    const cookies = await sendRequest();
-  
-    return {socket, cookies};
+function connectSocket() {
+  // Retrieve the JWT token from localStorage
+  const token = localStorage.getItem("museToken");
+  if (!token) {
+    console.error("No JWT token found in localStorage!");
+    return null;
   }
 
+  // Connect to the WebSocket server on port 8080 using the token for authentication
+  const socket = io("http://localhost:8080", {
+    auth: { token },
+    withCredentials: true,
+  });
 
+  socket.on("connect", () => {
+    console.log("Connected to WebSocket server");
+  });
 
-  
-  export default connectSocket;
+  socket.on("disconnect", () => {
+    console.log("Disconnected from WebSocket server");
+  });
+
+  return socket;
+}
+
+export default connectSocket;
