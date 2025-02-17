@@ -47,8 +47,8 @@ export default function Register() {
 
       const data = await response.json();
       console.log("Data:", data)
-      localStorage.setItem("museToken", data.accessToken);
-      localStorage.setItem("user", JSON.stringify(data.user))
+      typeof window !== "undefined" ? localStorage.setItem("museToken", data.accessToken) : "";
+      typeof window !== "undefined" ? localStorage.setItem("user", JSON.stringify(data.user)) : "";
 
       // Simulate an API call delay
       await new Promise((resolve) => setTimeout(resolve, 1000))

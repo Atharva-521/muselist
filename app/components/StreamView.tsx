@@ -42,7 +42,7 @@ export default function StreamView({ creatorId = "", playVideo = true, dashboard
   const [socket, setSocket] = useState<any>(null);
   const [cookies, setCookies] = useState<any>(null);
 
-  const user = localStorage.getItem("user"); // Get user from local storage
+  const user = typeof window !== "undefined" ? localStorage.getItem("user") : ""; // Get user from local storage
   const userObj = user ? JSON.parse(user) : null; // Parse user object
 
   // Initialize the WebSocket connection on mount

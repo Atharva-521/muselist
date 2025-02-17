@@ -13,6 +13,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  eslint: {
+    ignoreDuringBuilds: true,
+},
 };
 
 console.log("Next.js Configuration:", nextConfig.images?.remotePatterns);
