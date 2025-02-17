@@ -29,7 +29,7 @@ export default function Appbar() {
 
   // On mount, check for the JWT in localStorage.
   useEffect(() => {
-    const token = localStorage.getItem("museToken");
+    const token = typeof window != "undefined" ? localStorage.getItem("museToken") : '';
     if (token) {
       // For simplicity, we just save the token as user info.
       // In a real app you might decode the token to get user details.
@@ -41,7 +41,7 @@ export default function Appbar() {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("museToken");
+    typeof window != "undefined" ?localStorage.removeItem("museToken") : "";
     setUser(null);
     router.push("/"); // redirect to home after logout
   };
